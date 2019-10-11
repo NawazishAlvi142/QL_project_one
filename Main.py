@@ -5,33 +5,32 @@ import numpy as np
 from PIL import Image
 from matplotlib import style
 import matplotlib.pyplot as plt
-from numpy.random import randint
-
+from numpy.random import randint, uniform, random
 
 style.use('ggplot')
 
 SIZE = 10
-EPISODES = 25000
+EPISODES = 10
 MOVE_PENALTY = 1
-ENEMY_PENALTY = 300
-FOOD_REWARD = 25
-epsilon = 0.9
+ENEMY_PENALTY = 400
+FOOD_REWARD = 100
+epsilon = 0.0  # randomness
 EPSILON_DECAY = 0.9998
-SHOW_EVERY = 3000
+SHOW_EVERY = 1
 
-start_q_table = None  # or we can give the file name
+start_q_table = 'q_table-1570746238.pickle'  # or we can give the file name
 
 LEARNING_RATE = 0.1
 DISCOUNT = 0.95
 
-PLAYER_NR = 0
-FOOD_NR = 1
-ENEMY_NR = 2
+AGENT = 1
+FOOD = 2
+ENEMY = 3
 
 objects = {
-    0: (255, 175, 0),
-    1: (0, 255, 0),
-    2: (0, 0, 255)
+    1: (255, 175, 0),
+    2: (0, 255, 0),
+    3: (0, 0, 255)
 }
 
 
@@ -52,52 +51,53 @@ class Blob:
             self.move(x=1, y=1)
         elif choice == 1:
             self.move(x=-1, y=-1)
-        if choice == 2:
+        elif choice == 2:
             self.move(x=-1, y=1)
-        if choice == 3:
+        elif choice == 3:
             self.move(x=1, y=-1)
 
-    def move(self, x=None, y=None):
+    def move(self, x=False, y=False):
         if not x:
-            self.x = randint(-1, 2)
+            self.x += randint(-1, 2)
         else:
             self.x += x
 
         if not y:
-            self.y = randint(-1, 2)
+            self.y += randint(-1, 2)
         else:
             self.y += y
 
         if self.x < 0:
             self.x = 0
-        elif self.x > SIZE-1:
-            self.x = SIZE-1
+        elif self.x > SIZE - 1:
+            self.x = SIZE - 1
 
         if self.y < 0:
             self.y = 0
-        elif self.y > SIZE-1:
-            self.y = SIZE-1
+        elif self.y > SIZE - 1:
+            self.y = SIZE - 1
 
 
 if start_q_table is None:
     q_table = {}
-    for x1 in range(-SIZE+1, SIZE):
-        for y1 in range(-SIZE+1, SIZE):
-            for x2 in range(-SIZE+1, SIZE):
-                for y2 in range(-SIZE+1, SIZE):
-                    q_table[((x1, y1), (x2, y2))] = [np.random.uniform(-5, 0) for i in range(4)]
+    for x1 in range(-SIZE + 1, SIZE):
+        for y1 in range(-SIZE + 1, SIZE):
+            for x2 in range(-SIZE + 1, SIZE):
+                for y2 in range(-SIZE + 1, SIZE):
+                    q_table[((x1, y1), (x2, y2))] = [uniform(-5, 0) for i in range(4)]
 else:
     with open(start_q_table, 'rb') as file:
         q_table = pickle.load(file)
 
 episode_rewards = []
 for episode in range(EPISODES):
-    player = Blob()
+    agent = Blob()
     food = Blob()
     enemy = Blob()
 
     if episode % SHOW_EVERY == 0:
-        print('''On episode {} epsilon is {}
+        print('''
+        On episode {} epsilon is {}
         {} ep mean {}
         '''.format(episode, epsilon, SHOW_EVERY, np.mean(episode_rewards[-SHOW_EVERY:])))
         show = True
@@ -106,41 +106,47 @@ for episode in range(EPISODES):
 
     episode_reward = 0
     for i in range(200):
-        observation = (player-food, player-enemy)
-        if np.random.random() > epsilon:
+        observation = (agent - food, agent - enemy)
+        if random() > epsilon:
             action = np.argmax(q_table[observation])
         else:
             action = randint(0, 4)
 
-        player.action(action)
+        agent.action(action)
 
-        # enemy.move()
+        enemy.move()
 
-        if player.x == enemy.x and player.y == enemy.y:
+        if agent.x == enemy.x and agent.y == enemy.y:
             reward = -ENEMY_PENALTY
-            new_q = -ENEMY_PENALTY
-        elif player.x == food.x and player.y == food.y:
+        elif agent.x == food.x and agent.y == food.y:
             reward = FOOD_REWARD
-            new_q = FOOD_REWARD
         else:
             reward = -MOVE_PENALTY
-            new_q = -MOVE_PENALTY
 
-        new_observation = (player-food, player-enemy)
+        new_observation = (agent - food, agent - enemy)
         max_future_q = np.max(q_table[new_observation])
         current_q = q_table[observation][action]
 
+        if reward == FOOD_REWARD:
+            new_q = FOOD_REWARD
+        else:
+            new_q = (1 - LEARNING_RATE) * current_q + LEARNING_RATE * (reward + DISCOUNT * max_future_q)
+
         q_table[observation][action] = new_q
 
+        '''
+        now that we know the reward, first we need to observation immediately
+        after the move
+        '''
         if show:
             env = np.zeros((SIZE, SIZE, 3), dtype=np.uint8)
-            env[player.y][player.x] = objects[PLAYER_NR]
-            env[food.y][food.x] = objects[FOOD_NR]
-            env[enemy.y][enemy.x] = objects[ENEMY_NR]
+            env[agent.x][agent.y] = objects[AGENT]
+            env[enemy.x][enemy.y] = objects[ENEMY]
+            env[food.x][food.y] = objects[FOOD]
 
             img = Image.fromarray(env, 'RGB')
-            img = img.resize((400, 400))
-            cv2.imshow('image', np.array(img))
+            img = img.resize((500, 500))
+            cv2.imshow('Q Learning First Project', np.array(img))
             if reward == FOOD_REWARD or reward == -ENEMY_PENALTY:
                 if cv2.waitKey(500) & 0xFF == ord('q'):
                     break
